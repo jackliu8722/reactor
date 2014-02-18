@@ -31,12 +31,13 @@ ext {
 	// Libraries
 	disruptorVersion = '3.2.0'
 	nettyVersion = '4.0.17.Final'
+	zeromqVersion = '0.3.2'
 	jacksonDatabindVersion = '2.3.0'
-	jsonPathVersion = '0.9.1'
+	jsonPathVersion = '0.9.2'
 	kryoVersion = '2.22'
 	protobufVersion = '2.5.0'
 	snappyVersion = '1.1.0.1'
-	hadoopVersion = '1.1.2'
+	hadoopVersion = '2.2.0'
 	openHftChronicleVersion = '2.0.3'
 	openHftLangVersion = '6.1.4'
 
@@ -50,7 +51,7 @@ ext {
 	javadocLinks = [
 			"http://docs.oracle.com/javase/7/docs/api/",
 			"http://docs.oracle.com/javaee/6/api/",
-			"http://fasterxml.github.com/jackson-core/javadoc/2.2.0/"
+			"http://fasterxml.github.com/jackson-core/javadoc/2.3.0/",
 	] as String[]
 }
 
@@ -314,7 +315,9 @@ project('reactor-net') {
 		compile project(':reactor-core')
 
 		compile "io.netty:netty-all:$nettyVersion"
-		optional "com.fasterxml.jackson.core:jackson-databind:$jacksonDatabindVersion"
+
+		optional "org.zeromq:jeromq:$zeromqVersion",
+				"com.fasterxml.jackson.core:jackson-databind:$jacksonDatabindVersion"
 
 		// Testing
 		testCompile "org.apache.hadoop:hadoop-client:$hadoopVersion"

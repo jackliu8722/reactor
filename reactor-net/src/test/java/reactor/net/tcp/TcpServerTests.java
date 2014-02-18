@@ -27,6 +27,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.zeromq.ZMQ;
 import reactor.core.Environment;
 import reactor.event.dispatch.SynchronousDispatcher;
 import reactor.function.Consumer;
@@ -46,6 +47,9 @@ import reactor.net.netty.tcp.NettyTcpServer;
 import reactor.net.tcp.spec.TcpClientSpec;
 import reactor.net.tcp.spec.TcpServerSpec;
 import reactor.net.tcp.support.SocketUtils;
+import reactor.net.zmq.tcp.ZeroMQServerSocketOptions;
+import reactor.net.zmq.tcp.ZeroMQTcpServer;
+import reactor.util.UUIDUtils;
 
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -422,6 +426,40 @@ public class TcpServerTests {
 		server.shutdown().await();
 	}
 
+	@Test
+	public void exposesZeroMQServer() throws InterruptedException {
+		final int port = SocketUtils.findAvailableTcpPort();
+		final CountDownLatch latch = new CountDownLatch(1);
+		ZMQ.Context zmq = ZMQ.context(1);
+
+		TcpServer<Buffer, Buffer> server = new TcpServerSpec<Buffer, Buffer>(ZeroMQTcpServer.class)
+				.env(env)
+				.listen("127.0.0.1", port)
+				.options(new ZeroMQServerSocketOptions().context(zmq))
+				.consume(new Consumer<NetChannel<Buffer, Buffer>>() {
+					@Override
+					public void accept(NetChannel<Buffer, Buffer> channel) {
+						channel.consume(new Consumer<Buffer>() {
+							@Override
+							public void accept(Buffer buff) {
+								if(buff.remaining() == 128) {
+									latch.countDown();
+								}
+							}
+						});
+					}
+				})
+				.get();
+
+		server.start().await();
+
+		threadPool.submit(new ZeroMQWriter(zmq, port));
+
+		assertTrue("latch was counted down", latch.await(5, TimeUnit.SECONDS));
+
+		server.shutdown().await();
+	}
+
 	public static class Pojo {
 		private String name;
 
@@ -562,4 +600,40 @@ public class TcpServerTests {
 			}
 		}
 	}
+
+	private class ZeroMQWriter implements Runnable {
+		private final Random random = new Random();
+		private final ZMQ.Context zmq;
+		private final int         port;
+
+		private ZeroMQWriter(ZMQ.Context zmq, int port) {
+			this.zmq = zmq;
+			this.port = port;
+		}
+
+		@Override
+		public void run() {
+			String id = UUIDUtils.random().toString();
+			ZMQ.Socket socket = zmq.socket(ZMQ.REQ);
+			socket.setIdentity(id.getBytes());
+			socket.connect("tcp://127.0.0.1:" + port);
+
+			byte[] data = new byte[128];
+			random.nextBytes(data);
+
+			//			ZMsg msg = new ZMsg();
+			//			msg.add(new ZFrame(id.getBytes()));
+			//			msg.add(new ZFrame(Arrays.copyOf(data, data.length)));
+			//
+			//			random.nextBytes(data);
+			//			msg.add(new ZFrame(Arrays.copyOf(data, data.length)));
+			//
+			//			msg.send(socket, true);
+
+			socket.send(data);
+
+			socket.close();
+		}
+	}
+
 }
