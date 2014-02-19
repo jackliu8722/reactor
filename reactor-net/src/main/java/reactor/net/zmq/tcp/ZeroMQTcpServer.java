@@ -18,6 +18,7 @@ import reactor.net.NetChannel;
 import reactor.net.config.ServerSocketOptions;
 import reactor.net.config.SslOptions;
 import reactor.net.tcp.TcpServer;
+import reactor.queue.BlockingQueueFactory;
 import reactor.support.NamedDaemonThreadFactory;
 import reactor.util.Assert;
 import reactor.util.UUIDUtils;
@@ -26,6 +27,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
 import java.util.Collection;
+import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -81,7 +83,7 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 		return new ZeroMQNetChannel<IN, OUT>(
 				getEnvironment(),
 				getReactor(),
-				getReactor().getDispatcher(),
+				getEnvironment().getDispatcher(Environment.EVENT_LOOP),
 				getCodec()
 		);
 	}
@@ -125,8 +127,7 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 			} else {
 				zmq = ZMQ.context(ioThreadCount);
 			}
-			final int socketType = (null != zeromqOpts ? zeromqOpts.socketType() : ZMQ.ROUTER);
-			frontend = zmq.socket(socketType);
+			frontend = zmq.socket(ZMQ.ROUTER);
 			frontend.setIdentity(id.toString().getBytes());
 			frontend.setReceiveBufferSize(getOptions().rcvbuf());
 			frontend.setSendBufferSize(getOptions().sndbuf());
@@ -135,21 +136,18 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 				frontend.setTCPKeepAlive(1);
 			}
 
-			ZLoop.IZLoopHandler handler = new ZLoop.IZLoopHandler() {
+			final Queue<ZMsg> outputQueue = BlockingQueueFactory.createQueue();
+
+			ZLoop.IZLoopHandler inputHandler = new ZLoop.IZLoopHandler() {
 				@Override
 				public int handle(ZLoop loop, ZMQ.PollItem item, Object arg) {
 					ZMsg msg = ZMsg.recvMsg(frontend);
 
-					Object key;
-					switch(socketType) {
-						case ZMQ.ROUTER:
-							key = msg.popString();
-							break;
-						default:
-							key = defaultChannel;
-					}
-					ZeroMQNetChannel<IN, OUT> netChannel = (ZeroMQNetChannel<IN, OUT>)select(key);
-					netChannel.setSocket(frontend);
+					String connId = msg.popString();
+					ZeroMQNetChannel<IN, OUT> netChannel = ((ZeroMQNetChannel<IN, OUT>)select(connId))
+							.setConnectionId(connId)
+							.setSocket(frontend)
+							.setOutputQueue(outputQueue);
 
 					ZFrame content;
 					while(null != (content = msg.pop())) {
@@ -160,8 +158,21 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 					return 0;
 				}
 			};
+
+			ZLoop.IZLoopHandler outputHandler = new ZLoop.IZLoopHandler() {
+				@Override
+				public int handle(ZLoop loop, ZMQ.PollItem item, Object arg) {
+					ZMsg msg;
+					while(!outputQueue.isEmpty() && null != (msg = outputQueue.remove())) {
+						msg.send(frontend);
+					}
+					return 0;
+				}
+			};
+
 			ZMQ.PollItem pollInput = new ZMQ.PollItem(frontend, ZMQ.Poller.POLLIN);
-			loop.addPoller(pollInput, handler, null);
+			loop.addPoller(pollInput, inputHandler, null);
+			loop.addTimer(1, -1, outputHandler, null);
 
 			if(log.isInfoEnabled()) {
 				log.info("BIND: starting ZeroMQ server on {}", getListenAddress());

@@ -28,6 +28,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.zeromq.ZMQ;
+import org.zeromq.ZMsg;
 import reactor.core.Environment;
 import reactor.event.dispatch.SynchronousDispatcher;
 import reactor.function.Consumer;
@@ -438,12 +439,13 @@ public class TcpServerTests {
 				.options(new ZeroMQServerSocketOptions().context(zmq))
 				.consume(new Consumer<NetChannel<Buffer, Buffer>>() {
 					@Override
-					public void accept(NetChannel<Buffer, Buffer> channel) {
+					public void accept(final NetChannel<Buffer, Buffer> channel) {
 						channel.consume(new Consumer<Buffer>() {
 							@Override
 							public void accept(Buffer buff) {
 								if(buff.remaining() == 128) {
 									latch.countDown();
+									channel.send(Buffer.wrap("Hello World!"));
 								}
 							}
 						});
@@ -614,7 +616,7 @@ public class TcpServerTests {
 		@Override
 		public void run() {
 			String id = UUIDUtils.random().toString();
-			ZMQ.Socket socket = zmq.socket(ZMQ.REQ);
+			ZMQ.Socket socket = zmq.socket(ZMQ.DEALER);
 			socket.setIdentity(id.getBytes());
 			socket.connect("tcp://127.0.0.1:" + port);
 
@@ -631,6 +633,9 @@ public class TcpServerTests {
 			//			msg.send(socket, true);
 
 			socket.send(data);
+
+			ZMsg reply = ZMsg.recvMsg(socket);
+			log.info("reply: {}", reply);
 
 			socket.close();
 		}
