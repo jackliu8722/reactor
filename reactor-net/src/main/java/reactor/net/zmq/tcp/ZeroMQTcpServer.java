@@ -49,6 +49,7 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 	private volatile ZeroMQWorker worker;
 	private volatile Future<?>    workerFuture;
 	private volatile ZMQ.Socket   frontend;
+	private volatile boolean      closeSocket;
 
 	public ZeroMQTcpServer(@Nonnull Environment env,
 	                       @Nonnull Reactor reactor,
@@ -118,16 +119,20 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 		final    Runnable    started;
 		volatile ZMQ.Context zmq;
 
-		private ZeroMQWorker(Runnable started) {this.started = started;}
+		private ZeroMQWorker(Runnable started) {
+			this.started = started;
+		}
 
 		@Override
 		public void run() {
 			if(null != zeromqOpts && null != zeromqOpts.context()) {
 				zmq = zeromqOpts.context();
+				closeSocket = false;
 			} else {
 				zmq = ZMQ.context(ioThreadCount);
+				closeSocket = true;
 			}
-			frontend = zmq.socket(ZMQ.ROUTER);
+			frontend = zmq.socket((null != zeromqOpts ? zeromqOpts.socketType() : ZMQ.ROUTER));
 			frontend.setIdentity(id.toString().getBytes());
 			frontend.setReceiveBufferSize(getOptions().rcvbuf());
 			frontend.setSendBufferSize(getOptions().sndbuf());
@@ -190,7 +195,9 @@ public class ZeroMQTcpServer<IN, OUT> extends TcpServer<IN, OUT> {
 		void close() {
 			loop.destroy();
 			frontend.close();
-			zmq.close();
+			if(closeSocket) {
+				zmq.close();
+			}
 		}
 	}
 

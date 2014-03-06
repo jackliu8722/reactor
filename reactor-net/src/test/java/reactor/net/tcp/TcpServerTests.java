@@ -430,7 +430,7 @@ public class TcpServerTests {
 	@Test
 	public void exposesZeroMQServer() throws InterruptedException {
 		final int port = SocketUtils.findAvailableTcpPort();
-		final CountDownLatch latch = new CountDownLatch(1);
+		final CountDownLatch latch = new CountDownLatch(2);
 		ZMQ.Context zmq = ZMQ.context(1);
 
 		TcpServer<Buffer, Buffer> server = new TcpServerSpec<Buffer, Buffer>(ZeroMQTcpServer.class)
@@ -445,8 +445,10 @@ public class TcpServerTests {
 							public void accept(Buffer buff) {
 								if(buff.remaining() == 128) {
 									latch.countDown();
-									channel.send(Buffer.wrap("Hello World!"));
+								} else {
+									log.info("data: {}", buff.asString());
 								}
+								channel.sendAndForget(Buffer.wrap("Goodbye World!"));
 							}
 						});
 					}
@@ -455,11 +457,16 @@ public class TcpServerTests {
 
 		server.start().await();
 
-		threadPool.submit(new ZeroMQWriter(zmq, port));
+		ZeroMQWriter zmqw = new ZeroMQWriter(zmq, port, latch);
+		threadPool.submit(zmqw);
 
-		assertTrue("latch was counted down", latch.await(5, TimeUnit.SECONDS));
+		Thread.sleep(500);
+
+		assertTrue("reply was received", latch.await(60, TimeUnit.SECONDS));
 
 		server.shutdown().await();
+
+		zmq.term();
 	}
 
 	public static class Pojo {
@@ -605,12 +612,14 @@ public class TcpServerTests {
 
 	private class ZeroMQWriter implements Runnable {
 		private final Random random = new Random();
-		private final ZMQ.Context zmq;
-		private final int         port;
+		private final ZMQ.Context    zmq;
+		private final int            port;
+		private final CountDownLatch latch;
 
-		private ZeroMQWriter(ZMQ.Context zmq, int port) {
+		private ZeroMQWriter(ZMQ.Context zmq, int port, CountDownLatch latch) {
 			this.zmq = zmq;
 			this.port = port;
+			this.latch = latch;
 		}
 
 		@Override
@@ -623,19 +632,11 @@ public class TcpServerTests {
 			byte[] data = new byte[128];
 			random.nextBytes(data);
 
-			//			ZMsg msg = new ZMsg();
-			//			msg.add(new ZFrame(id.getBytes()));
-			//			msg.add(new ZFrame(Arrays.copyOf(data, data.length)));
-			//
-			//			random.nextBytes(data);
-			//			msg.add(new ZFrame(Arrays.copyOf(data, data.length)));
-			//
-			//			msg.send(socket, true);
-
 			socket.send(data);
 
 			ZMsg reply = ZMsg.recvMsg(socket);
 			log.info("reply: {}", reply);
+			latch.countDown();
 
 			socket.close();
 		}

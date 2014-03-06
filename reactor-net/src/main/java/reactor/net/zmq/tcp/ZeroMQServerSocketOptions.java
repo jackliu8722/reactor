@@ -12,6 +12,7 @@ import reactor.util.Assert;
 public class ZeroMQServerSocketOptions extends ServerSocketOptions {
 
 	private ZMQ.Context context;
+	private int socketType = ZMQ.ROUTER;
 
 	/**
 	 * Get the {@link org.zeromq.ZMQ.Context} to use for IO.
@@ -33,6 +34,28 @@ public class ZeroMQServerSocketOptions extends ServerSocketOptions {
 	public ZeroMQServerSocketOptions context(ZMQ.Context context) {
 		Assert.notNull(context, "ZeroMQ Context cannot be null");
 		this.context = context;
+		return this;
+	}
+
+	/**
+	 * The type of the ZMQ socket to create.
+	 *
+	 * @return the ZMQ socket type
+	 */
+	public int socketType() {
+		return socketType;
+	}
+
+	/**
+	 * Set the type of ZMQ socket to create.
+	 *
+	 * @param socketType
+	 * 		the ZMQ socket type
+	 *
+	 * @return {@literal this}
+	 */
+	public ZeroMQServerSocketOptions socketType(int socketType) {
+		this.socketType = socketType;
 		return this;
 	}
 

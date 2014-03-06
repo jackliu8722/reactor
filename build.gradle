@@ -31,9 +31,9 @@ ext {
 	// Libraries
 	disruptorVersion = '3.2.0'
 	nettyVersion = '4.0.17.Final'
-	zeromqVersion = '0.3.2'
+	zeromqVersion = '0.3.3'
 	jacksonDatabindVersion = '2.3.0'
-	jsonPathVersion = '0.9.2'
+	jsonPathVersion = '0.9.1'
 	kryoVersion = '2.22'
 	protobufVersion = '2.5.0'
 	snappyVersion = '1.1.0.1'
@@ -119,6 +119,7 @@ configure(allprojects) { project ->
 	configurations.all {
 		exclude group: 'commons-logging'
 		exclude module: 'junit'
+		exclude module: 'slf4j-log4j12'
 	}
 
 	test {
